@@ -202,17 +202,17 @@ func (mx *MatrixHandler) HandleGhostInvite(ctx context.Context, evt *event.Event
 	if err := intent.StateEvent(ctx, evt.RoomID, event.StateCreate, "", &createEvent); err != nil {
 		log.Warn().Err(err).Msg("Failed to check m.room.create event in room")
 	} else if createEvent.Type != "" {
-		log.Warn().Str("room_type", string(createEvent.Type)).Msg("Non-standard room type, leaving room")
-		_, err = intent.LeaveRoom(ctx, evt.RoomID, &mautrix.ReqLeave{
+		log.Warn().Str("room_type", string(createEvent.Type)).Msg("Non-standard room type")
+		/*_, err = intent.LeaveRoom(ctx, evt.RoomID, &mautrix.ReqLeave{
 			Reason: "Unsupported room type",
 		})
 		if err != nil {
 			log.Error().Err(err).Msg("Failed to leave room")
-		}
+		}*/
 		return
 	}
 	var hasBridgeBot, hasOtherUsers bool
-	for mxid, _ := range members.Joined {
+	for mxid := range members.Joined {
 		if mxid == intent.UserID || mxid == inviter.GetMXID() {
 			continue
 		} else if mxid == mx.bridge.Bot.UserID {
@@ -336,8 +336,10 @@ func (mx *MatrixHandler) shouldIgnoreEvent(evt *event.Event) bool {
 	return false
 }
 
-const initialSessionWaitTimeout = 3 * time.Second
-const extendedSessionWaitTimeout = 22 * time.Second
+const (
+	initialSessionWaitTimeout  = 3 * time.Second
+	extendedSessionWaitTimeout = 22 * time.Second
+)
 
 func (mx *MatrixHandler) sendCryptoStatusError(ctx context.Context, evt *event.Event, editEvent id.EventID, err error, retryCount int, isFinal bool) id.EventID {
 	mx.bridge.SendMessageErrorCheckpoint(evt, status.MsgStepDecrypted, err, isFinal, retryCount)
