@@ -19,7 +19,6 @@ import (
 
 	"github.com/rs/zerolog"
 	"go.mau.fi/util/retryafter"
-	"maunium.net/go/maulogger/v2/maulogadapt"
 
 	"maunium.net/go/mautrix/crypto/backup"
 	"maunium.net/go/mautrix/event"
@@ -49,17 +48,6 @@ type VerificationHelper interface {
 	ConfirmSAS(ctx context.Context, txnID id.VerificationTransactionID) error
 }
 
-// Deprecated: switch to zerolog
-type Logger interface {
-	Debugfln(message string, args ...interface{})
-}
-
-// Deprecated: switch to zerolog
-type WarnLogger interface {
-	Logger
-	Warnfln(message string, args ...interface{})
-}
-
 // Client represents a Matrix client.
 type Client struct {
 	HomeserverURL *url.URL     // The base homeserver URL
@@ -75,8 +63,6 @@ type Client struct {
 	Verification  VerificationHelper
 
 	Log zerolog.Logger
-	// Deprecated: switch to the zerolog instance in Log
-	Logger Logger
 
 	RequestHook  func(req *http.Request)
 	ResponseHook func(req *http.Request, resp *http.Response, duration time.Duration)
@@ -352,6 +338,7 @@ type FullRequest struct {
 	SensitiveContent bool
 	Handler          ClientResponseHandler
 	Logger           *zerolog.Logger
+	Client           *http.Client
 }
 
 var requestID int32
@@ -438,7 +425,10 @@ func (cli *Client) MakeFullRequest(ctx context.Context, params FullRequest) ([]b
 	if len(cli.AccessToken) > 0 {
 		req.Header.Set("Authorization", "Bearer "+cli.AccessToken)
 	}
-	return cli.executeCompiledRequest(req, params.MaxAttempts-1, 4*time.Second, params.ResponseJSON, params.Handler)
+	if params.Client == nil {
+		params.Client = cli.Client
+	}
+	return cli.executeCompiledRequest(req, params.MaxAttempts-1, 4*time.Second, params.ResponseJSON, params.Handler, params.Client)
 }
 
 func (cli *Client) cliOrContextLog(ctx context.Context) *zerolog.Logger {
@@ -449,7 +439,7 @@ func (cli *Client) cliOrContextLog(ctx context.Context) *zerolog.Logger {
 	return log
 }
 
-func (cli *Client) doRetry(req *http.Request, cause error, retries int, backoff time.Duration, responseJSON interface{}, handler ClientResponseHandler) ([]byte, error) {
+func (cli *Client) doRetry(req *http.Request, cause error, retries int, backoff time.Duration, responseJSON interface{}, handler ClientResponseHandler, client *http.Client) ([]byte, error) {
 	log := zerolog.Ctx(req.Context())
 	if req.Body != nil {
 		if req.GetBody == nil {
@@ -467,7 +457,7 @@ func (cli *Client) doRetry(req *http.Request, cause error, retries int, backoff 
 		Int("retry_in_seconds", int(backoff.Seconds())).
 		Msg("Request failed, retrying")
 	time.Sleep(backoff)
-	return cli.executeCompiledRequest(req, retries-1, backoff*2, responseJSON, handler)
+	return cli.executeCompiledRequest(req, retries-1, backoff*2, responseJSON, handler, client)
 }
 
 func readRequestBody(req *http.Request, res *http.Response) ([]byte, error) {
@@ -549,17 +539,17 @@ func ParseErrorResponse(req *http.Request, res *http.Response) ([]byte, error) {
 	}
 }
 
-func (cli *Client) executeCompiledRequest(req *http.Request, retries int, backoff time.Duration, responseJSON interface{}, handler ClientResponseHandler) ([]byte, error) {
+func (cli *Client) executeCompiledRequest(req *http.Request, retries int, backoff time.Duration, responseJSON interface{}, handler ClientResponseHandler, client *http.Client) ([]byte, error) {
 	cli.RequestStart(req)
 	startTime := time.Now()
-	res, err := cli.Client.Do(req)
+	res, err := client.Do(req)
 	duration := time.Now().Sub(startTime)
 	if res != nil {
 		defer res.Body.Close()
 	}
 	if err != nil {
 		if retries > 0 {
-			return cli.doRetry(req, err, retries, backoff, responseJSON, handler)
+			return cli.doRetry(req, err, retries, backoff, responseJSON, handler, client)
 		}
 		err = HTTPError{
 			Request:  req,
@@ -574,7 +564,7 @@ func (cli *Client) executeCompiledRequest(req *http.Request, retries int, backof
 
 	if retries > 0 && retryafter.Should(res.StatusCode, !cli.IgnoreRateLimit) {
 		backoff = retryafter.Parse(res.Header.Get("Retry-After"), backoff)
-		return cli.doRetry(req, fmt.Errorf("HTTP %d", res.StatusCode), retries, backoff, responseJSON, handler)
+		return cli.doRetry(req, fmt.Errorf("HTTP %d", res.StatusCode), retries, backoff, responseJSON, handler, client)
 	}
 
 	var body []byte
@@ -2295,7 +2285,7 @@ func NewClient(homeserverURL string, userID id.UserID, accessToken string) (*Cli
 	if err != nil {
 		return nil, err
 	}
-	cli := &Client{
+	return &Client{
 		AccessToken:   accessToken,
 		UserAgent:     DefaultUserAgent,
 		HomeserverURL: hsURL,
@@ -2307,7 +2297,5 @@ func NewClient(homeserverURL string, userID id.UserID, accessToken string) (*Cli
 		// The client will work with this storer: it just won't remember across restarts.
 		// In practice, a database backend should be used.
 		Store: NewMemorySyncStore(),
-	}
-	cli.Logger = maulogadapt.ZeroAsMau(&cli.Log)
-	return cli, nil
+	}, nil
 }

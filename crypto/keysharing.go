@@ -184,12 +184,17 @@ func (mach *OlmMachine) importForwardedRoomKey(ctx context.Context, evt *Decrypt
 		MaxMessages: maxMessages,
 		IsScheduled: content.IsScheduled,
 	}
+	existingIGS, _ := mach.CryptoStore.GetGroupSession(ctx, igs.RoomID, igs.SenderKey, igs.ID())
+	if existingIGS != nil && existingIGS.Internal.FirstKnownIndex() <= igs.Internal.FirstKnownIndex() {
+		// We already have an equivalent or better session in the store, so don't override it.
+		return false
+	}
 	err = mach.CryptoStore.PutGroupSession(ctx, content.RoomID, content.SenderKey, content.SessionID, igs)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to store new inbound group session")
 		return false
 	}
-	mach.markSessionReceived(content.SessionID)
+	mach.markSessionReceived(ctx, content.SessionID)
 	log.Debug().Msg("Received forwarded inbound group session")
 	return true
 }

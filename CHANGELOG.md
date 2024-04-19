@@ -1,4 +1,43 @@
-## v0.18.0 (unreleased)
+## v0.18.1 (2024-04-16)
+
+* *(format)* Added a `context.Context` field to HTMLParser's Context struct.
+* *(bridge)* Added support for handling join rules, knocks, invites and bans
+  (thanks to [@maltee1] in [#193] and [#204]).
+* *(crypto)* Changed forwarded room key handling to only accept keys with a
+  lower first known index than the existing session if there is one.
+* *(crypto)* Changed key backup restore to assume own device list is up to date
+  to avoid re-requesting device list for every deleted device that has signed
+  key backup.
+* *(crypto)* Fixed memory cache not being invalidated when storing own
+  cross-signing keys
+
+[@maltee1]: https://github.com/maltee1
+[#193]: https://github.com/mautrix/go/pull/193
+[#204]: https://github.com/mautrix/go/pull/204
+
+## v0.18.0 (2024-03-16)
+
+* **Breaking change *(client, bridge, appservice)*** Dropped support for
+  maulogger. Only zerolog loggers are now provided by default.
+* *(bridge)* Fixed upload size limit not having a default if the server
+  returned no value.
+* *(synapseadmin)* Added wrappers for some room and user admin APIs.
+  (thanks to [@grvn-ht] in [#181]).
+* *(crypto/verificationhelper)* Fixed bugs.
+* *(crypto)* Fixed key backup uploading doing too much base64.
+* *(crypto)* Changed `EncryptMegolmEvent` to return an error if persisting the
+  megolm session fails. This ensures that database errors won't cause messages
+  to be sent with duplicate indexes.
+* *(crypto)* Changed `GetOrRequestSecret` to use a callback instead of returning
+  the value directly. This allows validating the value in order to ignore
+  invalid secrets.
+* *(id)* Added `ParseCommonIdentifier` function to parse any Matrix identifier
+  in the [Common Identifier Format].
+* *(federation)* Added simple key server that passes the federation tester.
+
+[@grvn-ht]: https://github.com/grvn-ht
+[#181]: https://github.com/mautrix/go/pull/181
+[Common Identifier Format]: https://spec.matrix.org/v1.9/appendices/#common-identifier-format
 
 ### beta.1 (2024-02-16)
 
